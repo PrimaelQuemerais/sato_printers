@@ -335,9 +335,8 @@ class _PrinterScreenState extends State<PrinterScreen> {
   /// - ESC A: Start label format mode
   /// - ESC V: Vertical position (in dots from top)
   /// - ESC H: Horizontal position (in dots from left)
-  /// - ESC P: Font selection (P01-P09 = bitmap, P50-P59 = outline)
-  /// - ESC L: Label data (text to print)
-  /// - ESC BG: Barcode command (for barcodes)
+  /// - ESC P or ESC L####: Font selection
+  /// - Text data followed by CR
   /// - ESC Q: Print quantity
   /// - ESC Z: End label format
   /// - ETX (0x03): End of transmission
@@ -358,30 +357,28 @@ class _PrinterScreenState extends State<PrinterScreen> {
     // Set print speed (optional, 2 = medium speed)
     buffer.write('${esc}CS2$cr');
 
-    // Set print darkness/heat (optional, 4 = medium)
-    buffer.write('$esc#E4$cr');
+    // Set print darkness/heat (optional, H10 = medium heat)
+    buffer.write('${esc}H10$cr');
 
     // First text field: "SATO TEST LABEL"
+    // Using alternative L#### syntax (L0202 = bitmap font type 2, size 2)
     // Position: V0100 = 100 dots from top, H0100 = 100 dots from left
-    // Font: P2 = standard bitmap font
     buffer.write('${esc}V0100$cr'); // Vertical position
     buffer.write('${esc}H0100$cr'); // Horizontal position
-    buffer.write('${esc}P2$cr'); // Font selection
-    buffer.write('${esc}LSATO TEST LABEL$cr'); // Label data
+    buffer.write('${esc}L0202$cr'); // Font: bitmap type 2, size 2
+    buffer.write('SATO TEST LABEL$cr'); // Text data
 
     // Second text field: Date/time stamp
     buffer.write('${esc}V0180$cr'); // Vertical position
     buffer.write('${esc}H0100$cr'); // Horizontal position
-    buffer.write('${esc}P1$cr'); // Smaller font
-    buffer.write(
-      '${esc}LPrinted: ${DateTime.now().toString().substring(0, 19)}$cr',
-    );
+    buffer.write('${esc}L0101$cr'); // Smaller font
+    buffer.write('Printed: ${DateTime.now().toString().substring(0, 19)}$cr');
 
     // Third text field: Additional info
     buffer.write('${esc}V0250$cr');
     buffer.write('${esc}H0100$cr');
-    buffer.write('${esc}P1$cr');
-    buffer.write('${esc}LFlutter SATO Plugin v1.0$cr');
+    buffer.write('${esc}L0101$cr');
+    buffer.write('Flutter SATO Plugin v1.0$cr');
 
     // Print 1 copy
     buffer.write('${esc}Q1$cr');
@@ -556,6 +553,122 @@ class _PrinterScreenState extends State<PrinterScreen> {
       }
     } catch (e, stackTrace) {
       PrinterLogger.error('Error during simplest print', e, stackTrace);
+      _setStatus('Error: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Sends a printer initialization/reset command.
+  /// This can help clear any error states and prepare the printer.
+  Future<void> _initializePrinter() async {
+    if (!_isConnected) {
+      _setStatus('Please connect to a printer first');
+      return;
+    }
+
+    _setLoading(true);
+    _setStatus('Initializing printer...');
+    PrinterLogger.info('Sending printer initialization command...');
+
+    try {
+      // Send ESC AR (Reset) command
+      const esc = 0x1B;
+      const cr = 0x0D;
+
+      final List<int> resetCommand = [
+        esc, 0x41, 0x52, cr, // ESC AR - Reset printer
+      ];
+
+      final testData = Uint8List.fromList(resetCommand);
+      PrinterLogger.data('Reset command', testData);
+
+      final result = await _satoPrinters.printRawData(testData);
+
+      PrinterLogger.info('Reset result: success=${result.success}');
+
+      if (result.success) {
+        _setStatus('Printer initialized - try printing now');
+      } else {
+        _setStatus('Initialize failed: ${result.message}');
+      }
+    } catch (e, stackTrace) {
+      PrinterLogger.error('Error during initialization', e, stackTrace);
+      _setStatus('Error: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Prints a label with explicit label size definition.
+  /// Some SATO printers require the label dimensions to be specified.
+  Future<void> _printWithLabelSize() async {
+    if (!_isConnected) {
+      _setStatus('Please connect to a printer first');
+      return;
+    }
+
+    _setLoading(true);
+    _setStatus('Printing with label size...');
+    PrinterLogger.info('Starting print with label size definition...');
+
+    try {
+      const stx = '\x02';
+      const etx = '\x03';
+      const esc = '\x1B';
+      const cr = '\x0D';
+
+      final buffer = StringBuffer();
+
+      // Start of transmission
+      buffer.write(stx);
+
+      // Start label format
+      buffer.write('${esc}A$cr');
+
+      // Define label size: ESC A3 H#### V#### (Horizontal x Vertical in dots)
+      // Common label: 4" x 3" at 203 DPI = ~812 x 609 dots
+      // Let's use a smaller size for testing: 400 x 300 dots
+      buffer.write('${esc}A3H0400V0300$cr');
+
+      // Set print speed (2 = medium)
+      buffer.write('${esc}CS2$cr');
+
+      // Set heat/darkness (H10 = medium heat)
+      buffer.write('${esc}H10$cr');
+
+      // Text field
+      buffer.write('${esc}V0050$cr'); // Vertical position
+      buffer.write('${esc}H0050$cr'); // Horizontal position
+      buffer.write('${esc}L0202$cr'); // Font selection (alternative syntax)
+      buffer.write('TEST WITH SIZE$cr');
+
+      // Print 1 copy
+      buffer.write('${esc}Q1$cr');
+
+      // End label format
+      buffer.write('${esc}Z$cr');
+
+      // End of transmission
+      buffer.write(etx);
+
+      final command = buffer.toString();
+      final testData = Uint8List.fromList(command.codeUnits);
+
+      PrinterLogger.debug('Command with label size:\n$command');
+      PrinterLogger.data('Label size SBPL data', testData);
+
+      final result = await _satoPrinters.printRawData(testData);
+
+      PrinterLogger.info('Print with size result: success=${result.success}');
+
+      if (result.success) {
+        _setStatus('Label with size sent');
+      } else {
+        _setStatus('Print failed: ${result.message}');
+      }
+    } catch (e, stackTrace) {
+      PrinterLogger.error('Error during print with size', e, stackTrace);
       _setStatus('Error: $e');
     } finally {
       _setLoading(false);
@@ -810,6 +923,28 @@ class _PrinterScreenState extends State<PrinterScreen> {
                                   : _printSimplestLabel,
                               icon: const Icon(Icons.science),
                               label: const Text('Simplest'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _isLoading ? null : _initializePrinter,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Init Printer'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _isLoading
+                                  ? null
+                                  : _printWithLabelSize,
+                              icon: const Icon(Icons.aspect_ratio),
+                              label: const Text('With Size'),
                             ),
                           ),
                         ],
