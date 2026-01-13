@@ -1,5 +1,6 @@
 package io.svnk.sato_printers.handlers
 
+import android.util.Log
 import io.flutter.plugin.common.MethodChannel.Result
 import io.svnk.sato_printers.managers.PrinterManager
 import io.svnk.sato_printers.models.PrintOptions
@@ -15,6 +16,10 @@ import kotlinx.coroutines.withContext
  */
 class PrintHandler(private val printerManager: PrinterManager) {
 
+    companion object {
+        private const val TAG = "SatoPrintHandler"
+    }
+
     private val scope = CoroutineScope(Dispatchers.Main)
 
     /**
@@ -25,14 +30,27 @@ class PrintHandler(private val printerManager: PrinterManager) {
      * @param result The method channel result
      */
     fun printRawData(data: ByteArray, options: Map<String, Any?>?, result: Result) {
+        Log.d(TAG, "printRawData: Received ${data.size} bytes to print")
+        Log.d(TAG, "printRawData: Options = $options")
+
         scope.launch {
             try {
                 val printOptions = PrintOptions.fromMap(options)
+                Log.d(TAG, "printRawData: Parsed options - expectResponse=${printOptions.expectResponse}, timeout=${printOptions.timeout}")
+
                 val printResult = withContext(Dispatchers.IO) {
+                    Log.d(TAG, "printRawData: Calling printerManager.sendRawData on IO thread")
                     printerManager.sendRawData(data, printOptions)
                 }
+
+                Log.d(TAG, "printRawData: Result - success=${printResult.success}, message=${printResult.message}")
+                if (printResult.responseData != null) {
+                    Log.d(TAG, "printRawData: Response data size = ${printResult.responseData.size}")
+                }
+
                 result.success(printResult.toMap())
             } catch (e: Exception) {
+                Log.e(TAG, "printRawData: Exception occurred", e)
                 val (code, message) = ErrorMapper.mapException(e)
                 result.error(code, message, null)
             }

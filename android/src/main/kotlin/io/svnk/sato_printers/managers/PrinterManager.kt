@@ -17,6 +17,7 @@ import java.io.IOException
 class PrinterManager(private val context: Context) {
 
     companion object {
+        private const val TAG = "SatoPrinterManager"
         private const val DEFAULT_CONNECT_TIMEOUT = 10000 // 10 seconds
         private const val DEFAULT_READ_TIMEOUT = 10000 // 10 seconds
     }
@@ -33,6 +34,7 @@ class PrinterManager(private val context: Context) {
      */
     @Throws(IOException::class)
     fun connectBluetooth(address: String, timeout: Int = DEFAULT_CONNECT_TIMEOUT): Boolean {
+        android.util.Log.d(TAG, "connectBluetooth: Starting connection to $address with timeout $timeout")
         disconnect()
 
         val printer = BluetoothPrinter(
@@ -41,8 +43,11 @@ class PrinterManager(private val context: Context) {
             false,
             timeout
         )
+        android.util.Log.d(TAG, "connectBluetooth: BluetoothPrinter created, setting read timeout")
         printer.readTimeout = DEFAULT_READ_TIMEOUT
+        android.util.Log.d(TAG, "connectBluetooth: Calling printer.connect()...")
         printer.connect()
+        android.util.Log.d(TAG, "connectBluetooth: Connection successful, isConnected=${printer.isConnected}")
 
         currentPrinter = printer
         currentDevice = PrinterDevice(
@@ -63,6 +68,7 @@ class PrinterManager(private val context: Context) {
      */
     @Throws(IOException::class)
     fun connectTcp(ipAddress: String, port: Int, timeout: Int = DEFAULT_CONNECT_TIMEOUT): Boolean {
+        android.util.Log.d(TAG, "connectTcp: Starting connection to $ipAddress:$port with timeout $timeout")
         disconnect()
 
         val printer = TcpPrinter(
@@ -72,8 +78,11 @@ class PrinterManager(private val context: Context) {
             false,
             timeout
         )
+        android.util.Log.d(TAG, "connectTcp: TcpPrinter created, setting read timeout")
         printer.readTimeout = DEFAULT_READ_TIMEOUT
+        android.util.Log.d(TAG, "connectTcp: Calling printer.connect()...")
         printer.connect()
+        android.util.Log.d(TAG, "connectTcp: Connection successful, isConnected=${printer.isConnected}")
 
         currentPrinter = printer
         currentDevice = PrinterDevice(
@@ -151,27 +160,47 @@ class PrinterManager(private val context: Context) {
      */
     @Throws(IOException::class, ReadTimeoutException::class)
     fun sendRawData(data: ByteArray, options: PrintOptions = PrintOptions()): PrintResult {
+        android.util.Log.d(TAG, "sendRawData: Starting with ${data.size} bytes")
+        android.util.Log.d(TAG, "sendRawData: Data hex: ${data.joinToString(" ") { String.format("%02X", it) }}")
+        android.util.Log.d(TAG, "sendRawData: Options - expectResponse=${options.expectResponse}, timeout=${options.timeout}, responseByteCount=${options.responseByteCount}")
+
         val printer = currentPrinter
             ?: throw IOException("No printer connected")
 
+        android.util.Log.d(TAG, "sendRawData: Printer instance found, checking connection...")
+
         if (!printer.isConnected) {
+            android.util.Log.d(TAG, "sendRawData: Printer not connected, attempting to reconnect...")
             printer.connect()
+            android.util.Log.d(TAG, "sendRawData: Reconnection successful")
+        } else {
+            android.util.Log.d(TAG, "sendRawData: Printer is connected")
         }
 
         return try {
             // Set the read timeout if specified
             printer.readTimeout = options.timeout
+            android.util.Log.d(TAG, "sendRawData: Read timeout set to ${options.timeout}ms")
 
             // Send data and optionally receive response
+            android.util.Log.d(TAG, "sendRawData: Calling printer.writeData()...")
             val responseData = if (options.expectResponse) {
+                android.util.Log.d(TAG, "sendRawData: Expecting response - responseByteCount=${options.responseByteCount}")
                 printer.writeData(
                     data,
                     options.responseByteCount,
                     options.responseTerminator ?: ByteArray(0)
                 )
             } else {
+                android.util.Log.d(TAG, "sendRawData: Not expecting response, using -1 for byte count")
                 printer.writeData(data, -1, ByteArray(0))
                 null
+            }
+
+            android.util.Log.d(TAG, "sendRawData: writeData completed successfully")
+            if (responseData != null) {
+                android.util.Log.d(TAG, "sendRawData: Response received: ${responseData.size} bytes")
+                android.util.Log.d(TAG, "sendRawData: Response hex: ${responseData.joinToString(" ") { String.format("%02X", it) }}")
             }
 
             PrintResult(
@@ -180,14 +209,22 @@ class PrinterManager(private val context: Context) {
                 responseData = responseData
             )
         } catch (e: ReadTimeoutException) {
+            android.util.Log.e(TAG, "sendRawData: Read timeout exception", e)
             PrintResult(
                 success = false,
                 message = "Read timeout: ${e.message}"
             )
         } catch (e: IOException) {
+            android.util.Log.e(TAG, "sendRawData: IO exception", e)
             PrintResult(
                 success = false,
                 message = "IO error: ${e.message}"
+            )
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "sendRawData: Unexpected exception", e)
+            PrintResult(
+                success = false,
+                message = "Unexpected error: ${e.message}"
             )
         }
     }
