@@ -3,6 +3,8 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
 import 'package:sato_printers/sato_printers.dart';
 
 void main() {
@@ -675,6 +677,110 @@ class _PrinterScreenState extends State<PrinterScreen> {
     }
   }
 
+  /// Picks an image file and prints it.
+  /// This demonstrates printing actual image data instead of text commands.
+  Future<void> _printFromFile() async {
+    if (!_isConnected) {
+      _setStatus('Please connect to a printer first');
+      return;
+    }
+
+    PrinterLogger.info('Starting print from file...');
+
+    try {
+      // Pick an image file
+      final ImagePicker picker = ImagePicker();
+      final XFile? pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800,
+        maxHeight: 600,
+      );
+
+      if (pickedFile == null) {
+        PrinterLogger.info('No file selected');
+        _setStatus('No file selected');
+        return;
+      }
+
+      _setLoading(true);
+      _setStatus('Processing image...');
+      PrinterLogger.info('File selected: ${pickedFile.path}');
+
+      // Read the image file
+      final bytes = await pickedFile.readAsBytes();
+      PrinterLogger.debug('Image file size: ${bytes.length} bytes');
+
+      // Decode the image
+      img.Image? image = img.decodeImage(bytes);
+      if (image == null) {
+        PrinterLogger.error('Failed to decode image');
+        _setStatus('Failed to decode image');
+        return;
+      }
+
+      PrinterLogger.info(
+        'Image decoded: ${image.width}x${image.height} pixels',
+      );
+
+      // Convert to grayscale and resize if needed
+      // Most label printers work best with smaller, monochrome images
+      if (image.width > 576) {
+        // 576 dots = ~3 inches at 203 DPI
+        PrinterLogger.debug(
+          'Resizing image from ${image.width}x${image.height}',
+        );
+        image = img.copyResize(image, width: 576);
+        PrinterLogger.debug('Resized to ${image.width}x${image.height}');
+      }
+
+      // Convert to grayscale
+      image = img.grayscale(image);
+      PrinterLogger.debug('Converted to grayscale');
+
+      // Encode back to PNG for transmission
+      final processedBytes = Uint8List.fromList(img.encodePng(image));
+      PrinterLogger.info(
+        'Processed image size: ${processedBytes.length} bytes',
+      );
+      PrinterLogger.data(
+        'Image data (first 100 bytes)',
+        processedBytes.length > 100
+            ? Uint8List.fromList(processedBytes.sublist(0, 100))
+            : processedBytes,
+      );
+
+      _setStatus('Sending image to printer...');
+      PrinterLogger.info('Calling printImage...');
+
+      // Print the image
+      // The plugin will convert it to SBPL bitmap commands
+      final result = await _satoPrinters.printImage(
+        processedBytes,
+        options: PrintOptions(
+          timeout: 30000, // 30 seconds for image processing
+        ),
+      );
+
+      PrinterLogger.info(
+        'Print image result: success=${result.success}, message=${result.message}',
+      );
+      if (result.responseData != null) {
+        PrinterLogger.data('Printer response', result.responseData!);
+      }
+
+      if (result.success) {
+        _setStatus('Image sent to printer successfully');
+      } else {
+        _setStatus('Print failed: ${result.message}');
+      }
+    } catch (e, stackTrace) {
+      PrinterLogger.error('Error during print from file', e, stackTrace);
+      _setStatus('Error: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -926,6 +1032,19 @@ class _PrinterScreenState extends State<PrinterScreen> {
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _printFromFile,
+                          icon: const Icon(Icons.image),
+                          label: const Text('Print from Image File'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Row(
