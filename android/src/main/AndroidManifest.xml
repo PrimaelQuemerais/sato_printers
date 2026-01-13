@@ -1,0 +1,20 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="io.svnk.sato_printers">
+
+  <!-- Bluetooth permissions for discovering and connecting to printers -->
+  <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+  <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+
+  <!-- Android 12+ Bluetooth permissions -->
+  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+  <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+      android:usesPermissionFlags="neverForLocation" />
+
+  <!-- Location permission may be required for Bluetooth scanning on some Android versions -->
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+  <!-- USB permissions are handled programmatically -->
+  <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+
+</manifest>
