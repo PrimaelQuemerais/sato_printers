@@ -35,6 +35,12 @@ class _PrinterScreenState extends State<PrinterScreen> {
   final SatoPrinters _satoPrinters = SatoPrinters();
   final ImagePicker _imagePicker = ImagePicker();
   final ZplConverter _zplConverter = ZplConverter();
+  final TextEditingController _tcpIpController = TextEditingController(
+    text: '192.168.1.110',
+  );
+  final TextEditingController _tcpPortController = TextEditingController(
+    text: '9100',
+  );
 
   List<PrinterDevice> _printers = <PrinterDevice>[];
   PrinterDevice? _selectedPrinter;
@@ -53,6 +59,13 @@ class _PrinterScreenState extends State<PrinterScreen> {
   void initState() {
     super.initState();
     _applyConverterOptions();
+  }
+
+  @override
+  void dispose() {
+    _tcpIpController.dispose();
+    _tcpPortController.dispose();
+    super.dispose();
   }
 
   void _applyConverterOptions() {
@@ -139,6 +152,45 @@ class _PrinterScreenState extends State<PrinterScreen> {
       _showMessage('Disconnect error: ${e.message}');
     } catch (e) {
       _showMessage('Disconnect error: $e');
+    }
+  }
+
+  Future<void> _connectTcp() async {
+    final ip = _tcpIpController.text.trim();
+    final port = int.tryParse(_tcpPortController.text.trim());
+
+    if (ip.isEmpty) {
+      _showMessage('Enter a TCP/IP address.');
+      return;
+    }
+    if (port == null || port < 1 || port > 65535) {
+      _showMessage('Enter a valid TCP port (1-65535).');
+      return;
+    }
+
+    setState(() {
+      _isConnecting = true;
+    });
+
+    try {
+      final success = await _satoPrinters.connectTcp(ip, port);
+      if (!mounted) return;
+      setState(() {
+        _isConnected = success;
+      });
+      _showMessage(
+        success ? 'Connected to $ip:$port.' : 'TCP/IP connection failed.',
+      );
+    } on SatoException catch (e) {
+      _showMessage('TCP/IP connection error: ${e.message}');
+    } catch (e) {
+      _showMessage('TCP/IP connection error: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isConnecting = false;
+        });
+      }
     }
   }
 
@@ -275,6 +327,45 @@ class _PrinterScreenState extends State<PrinterScreen> {
                 _selectedPrinter = value;
               });
             },
+          ),
+          const SizedBox(height: 8),
+          Text('TCP/IP', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: _tcpIpController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'IP Address',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: _tcpPortController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'Port',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ElevatedButton.icon(
+              onPressed: _isConnecting ? null : _connectTcp,
+              icon: const Icon(Icons.lan),
+              label: const Text('Connect TCP/IP'),
+            ),
           ),
           const SizedBox(height: 8),
           Wrap(
