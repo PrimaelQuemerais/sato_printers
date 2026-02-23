@@ -1,16 +1,27 @@
 # sato_printers_example
 
-Demonstrates how to use the sato_printers plugin.
+Simple Flutter example app for the `sato_printers` SDK.
 
-## Getting Started
+## What it does
 
-This project is a starting point for a Flutter application.
+- Discovers Bluetooth and USB printers.
+- Connects to a selected printer.
+- Lets the user upload an image from gallery.
+- Converts the image to ZPL (`^GFA`) in Dart.
+- Sends the generated ZPL to the printer as raw bytes.
 
-A few resources to get you started if this is your first Flutter project:
+## Run
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```bash
+cd example
+flutter pub get
+flutter run
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Flow inside the app
+
+1. Tap `Discover Printers`.
+2. Select a printer and tap `Connect`.
+3. Tap `Upload Image`.
+4. (Optional) tweak compression and blackness, then rebuild ZPL.
+5. Tap `Send ZPL to Printer`.
